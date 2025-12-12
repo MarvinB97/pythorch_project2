@@ -1,7 +1,48 @@
 import torch
 import torch.nn as nn
-from torchvision import datasets, transforms
+from torchvision import transforms
+from torchvision.datasets import ImageFolder
+from torch.utils.data import DataLoader, random_split
+from PIL import Image
 import matplotlib.pyplot as plt
+
+device = torch.device("cpu")
+
+transform = transforms.Compose([
+    transforms.Resize((224, 224)),
+    transforms.ToTensor(),
+    transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))
+])
+
+def pil_loader_safe(path):
+    try:
+        with open(path, 'rb') as f:
+            img = Image.open(f)
+            return img.convert('RGB')
+    except:
+        print(f"Archivo corrupto ignorado: {path}")
+        return None
+
+class ImageFolderSafe(ImageFolder):
+    def __getitem__(self, index):
+        path, target = self.samples[index]
+        sample = pil_loader_safe(path)
+        if sample is None:
+            return self.__getitem__((index + 1) % len(self.samples))
+        if self.transform:
+            sample = self.transform(sample)
+        return sample, target
+
+dataset = ImageFolderSafe("data", transform=transform)
+print("Clases:", dataset.classes)
+
+train_size = int(0.8 * len(dataset))
+test_size = len(dataset) - train_size
+train_dataset, test_dataset = random_split(dataset, [train_size, test_size])
+
+train_loader = DataLoader(train_dataset, batch_size=32, shuffle=True)
+test_loader = DataLoader(test_dataset, batch_size=32, shuffle=False)
+
 
 # usar el modelo ya entrenado
 
