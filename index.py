@@ -1,48 +1,100 @@
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from torchvision import datasets, transforms
-from torch.utils.data import DataLoader
+from torchvision.datasets import ImageFolder
+from torchvision import transforms
+from torch.utils.data import DataLoader, random_split
+from PIL import Image
 import matplotlib.pyplot as plt
+from pathlib import Path
 
-# config
-device = torch.device("cpu")  # SOLO CPU
+# ---------------- CONFIG ----------------
+device = torch.device("cpu")  # Solo CPU
 
+# Transformaciones
 transform = transforms.Compose([
+    transforms.Resize((224, 224)),
     transforms.ToTensor(),
-    transforms.Normalize((0.5,), (0.5,))
+    transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))
 ])
 
-# cargar dataset
-train_data = datasets.MNIST(root="./data", train=True, download=True, transform=transform)
-test_data = datasets.MNIST(root="./data", train=False, download=True, transform=transform)
+# ---------------- CARGA SEGURA DE IMÁGENES ----------------
+def pil_loader_safe(path):
+    try:
+        with open(path, 'rb') as f:
+            img = Image.open(f)
+            return img.convert('RGB')
+    except:
+        print(f"Archivo corrupto ignorado: {path}")
+        return None
 
-train_loader = DataLoader(train_data, batch_size=64, shuffle=True)
-test_loader = DataLoader(test_data, batch_size=64, shuffle=False)
+class ImageFolderSafe(ImageFolder):
+    def __getitem__(self, index):
+        path, target = self.samples[index]
+        sample = pil_loader_safe(path)
+        if sample is None:
+            # Si la imagen está corrupta, tomar la siguiente
+            return self.__getitem__((index + 1) % len(self.samples))
+        if self.transform is not None:
+            sample = self.transform(sample)
+        if self.target_transform is not None:
+            target = self.target_transform(target)
+        return sample, target
 
-# modelo mlp
-class MLP(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.layers = nn.Sequential(
-            nn.Flatten(),     # 28x28 → 784
-            nn.Linear(784, 128),
-            nn.ReLU(),
-            nn.Linear(128, 10)  # 10 números
-        )
+# Dataset
+dataset = ImageFolderSafe("data", transform=transform)
+print("Clases:", dataset.classes)
 
-    def forward(self, x):
-        return self.layers(x)
+# ---------------- DIVISIÓN TRAIN/TEST ----------------
+train_size = int(0.8 * len(dataset))
+test_size = len(dataset) - train_size
+train_dataset, test_dataset = random_split(dataset, [train_size, test_size])
 
-model = MLP().to(device)
+train_loader = DataLoader(train_dataset, batch_size=32, shuffle=True)
+test_loader = DataLoader(test_dataset, batch_size=32, shuffle=False)
 
-# training
+# ---------------- VISUALIZAR IMAGEN ----------------
+images, labels = next(iter(train_loader))
+img = images[0].permute(1, 2, 0) * 0.5 + 0.5  # desnormalizar
+plt.imshow(img)
+plt.title(f"Label: {dataset.classes[labels[0]]}")
+plt.axis("off")
+plt.show()
+
+# ---------------- MODELO CNN ----------------
+model = nn.Sequential(
+    # Bloque 1
+    nn.Conv2d(3, 32, kernel_size=3, padding=1),
+    nn.ReLU(),
+    nn.MaxPool2d(2, 2),
+
+    # Bloque 2
+    nn.Conv2d(32, 64, kernel_size=3, padding=1),
+    nn.ReLU(),
+    nn.MaxPool2d(2, 2),
+
+    # Bloque 3
+    nn.Conv2d(64, 128, kernel_size=3, padding=1),
+    nn.ReLU(),
+    nn.MaxPool2d(2, 2),
+
+    # Aplanar
+    nn.Flatten(),
+
+    # Clasificación
+    nn.Linear(128 * 28 * 28, 256),
+    nn.ReLU(),
+    nn.Linear(256, len(dataset.classes))  # Número de clases
+)
+
+model.to(device)
+
+# ---------------- ENTRENAMIENTO ----------------
 criterion = nn.CrossEntropyLoss()
 optimizer = optim.Adam(model.parameters(), lr=0.001)
-
 epochs = 3
 
-print("Entrenando...\n")
+print("----------- Entrenando -----------\n")
 for epoch in range(epochs):
     total_loss = 0
     for images, labels in train_loader:
@@ -59,15 +111,15 @@ for epoch in range(epochs):
     print(f"Época {epoch+1}/{epochs} - Pérdida: {total_loss:.4f}")
 
 torch.save(model.state_dict(), "model.pth")
-print("\nModelo entrenado, se guardó como model.pth\n")
+print("\nModelo entrenado y guardado como model.pth\n")
 
-# evaluacion
+# ---------------- EVALUACIÓN ----------------
 correct = 0
 total = 0
-
 model.eval()
 with torch.no_grad():
     for images, labels in test_loader:
+        images, labels = images.to(device), labels.to(device)
         output = model(images)
         _, predicted = torch.max(output.data, 1)
         total += labels.size(0)
@@ -75,21 +127,3 @@ with torch.no_grad():
 
 accuracy = correct / total * 100
 print(f"Precisión en test: {accuracy:.2f}%\n")
-
-# test manuales
-def probar_manual(indice):
-    """
-    Muestra una imagen del dataset de test y su predicción.
-    """
-    img, label = test_data[indice]
-    model.eval()
-    with torch.no_grad():
-        salida = model(img.unsqueeze(0))
-        pred = torch.argmax(salida).item()
-
-    plt.imshow(img.squeeze(), cmap="gray")
-    plt.title(f"Etiqueta real: {label} - Predicción: {pred}")
-    plt.show()
-
-# Ejemplo: probar el índice 0
-probar_manual(0)
