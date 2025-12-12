@@ -12,3 +12,7 @@ Para las graficas (pip o pip3):
 * pip install matplotlib
 
 nota: si es en windows revisar la configuracion de las variables (los path).
+
+
+## Matriz de confusion es necesario:
+* pip install scikit-learn

@@ -9,6 +9,10 @@ import matplotlib.pyplot as plt
 from pathlib import Path
 
 
+from matriz_confusion import generar_matriz_confusion
+
+
+
 # ---------------- CONFIG ----------------
 device = torch.device("cpu")  # Solo CPU
 
@@ -109,3 +113,16 @@ def probar_manual(indice):
 
 # Ejemplo: probar el índice 0
 probar_manual(12)
+
+
+
+
+
+#-----------Matriz de confusion--
+
+generar_matriz_confusion(
+    model=model,
+    test_loader=test_loader,
+    classes=dataset.classes,
+    device=device
+)
